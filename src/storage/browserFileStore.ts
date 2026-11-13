@@ -59,10 +59,13 @@ export function createBrowserStore(suggestedName = "fehlzeiten.fzt"): BrowserSto
   }
 
   async function shareOrDownload(bytes: Uint8Array): Promise<void> {
-    const file = new File([bytes as BlobPart], suggestedName, { type: "application/octet-stream" });
+    // Unter dem Namen der geöffneten Datei sichern: nur dann bietet „Dateien“ im selben Ordner „Ersetzen“ an.
+    const fileName = name ?? suggestedName;
+    const file = new File([bytes as BlobPart], fileName, { type: "application/octet-stream" });
     if (navigator.canShare?.({ files: [file] })) {
       try {
-        await navigator.share({ files: [file], title: suggestedName });
+        // Bewusst ohne title/text: iOS legt daraus sonst eine zusätzliche, leere .txt-Datei an.
+        await navigator.share({ files: [file] });
         return;
       } catch (e) {
         if ((e as Error).name === "AbortError") throw new Error("Speichern abgebrochen.");
@@ -72,7 +75,7 @@ export function createBrowserStore(suggestedName = "fehlzeiten.fzt"): BrowserSto
     const url = URL.createObjectURL(file);
     const a = document.createElement("a");
     a.href = url;
-    a.download = suggestedName;
+    a.download = fileName;
     a.click();
     setTimeout(() => URL.revokeObjectURL(url), 10_000);
   }
