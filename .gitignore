@@ -1,0 +1,25 @@
+# Abhängigkeiten und Builds
+node_modules/
+dist/
+build/
+target/
+*.log
+
+# Lokale Daten und Backups – niemals einchecken
+*.db
+*.sqlite
+*.sqlite3
+*.backup
+*.bak
+data/
+backups/
+
+# Umgebung
+.env
+.env.*
+
+# OS / Editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
