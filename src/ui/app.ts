@@ -544,8 +544,12 @@ async function onClick(el: HTMLElement) {
           : `Vorwarnung: ${w.name} (${w.className}) – ${w.totalDays} Fehltage`;
         // „fällig“ steht dauerhaft im roten Banner (bis die Anzeige als gestellt markiert ist), hier nur die Vorwarnung
         if (w.kind === "warn") notice("warn", text, w.studentId);
-        systemNotify(w.kind === "due" ? "Schulversäumnisanzeige fällig" : "Vorwarnung Fehlzeiten", text);
       }
+      // Systembenachrichtigungen bleiben im Benachrichtigungscenter/Sperrbildschirm sichtbar: nur Anzahl, keine Namen.
+      const due = warnings.filter((w) => w.kind === "due").length;
+      const warn = warnings.length - due;
+      if (due) systemNotify("Schulversäumnisanzeige fällig", `${due === 1 ? "1 Anzeige ist" : `${due} Anzeigen sind`} fällig. Details in der App.`);
+      if (warn) systemNotify("Vorwarnung Fehlzeiten", `${warn === 1 ? "1 Vorwarnung" : `${warn} Vorwarnungen`}. Details in der App.`);
       await persist();
       break;
     }
