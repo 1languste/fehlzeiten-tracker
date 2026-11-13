@@ -612,7 +612,8 @@ setInterval(() => {
   }
 }, 15_000);
 
-if ("serviceWorker" in navigator) {
+// Nur im Produktions-Build: im Entwicklungsmodus würde der Offline-Cache Änderungen verdecken.
+if (import.meta.env.PROD && "serviceWorker" in navigator) {
   window.addEventListener("load", () => { navigator.serviceWorker.register("./sw.js").catch(() => { /* ohne Offline-Cache weiter */ }); });
 }
 
