@@ -11,6 +11,7 @@ target/
 *.sqlite3
 *.backup
 *.bak
+*.fzt
 data/
 backups/
 

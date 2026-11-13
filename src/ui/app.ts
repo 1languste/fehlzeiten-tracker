@@ -36,6 +36,8 @@ const S = {
   startError: "",
   startMode: "open" as "open" | "create",
   lastReminderDay: "",
+  sort: "days" as "days" | "name",
+  toast: "",
 };
 
 // ---------- Hilfen ----------
@@ -53,6 +55,22 @@ function rememberRevision(r: number) {
 }
 
 const tracker = () => S.session!.tracker;
+
+const ICONS: Record<string, string> = {
+  prev: '<path d="M15 6l-6 6 6 6"/>', next: '<path d="M9 6l6 6-6 6"/>',
+  x: '<path d="M6 6l12 12M18 6L6 18"/>', plus: '<path d="M12 5v14M5 12h14"/>',
+  lock: '<rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 018 0v3"/>',
+};
+const icon = (name: keyof typeof ICONS): Html =>
+  raw(`<svg class="ic" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${ICONS[name]}</svg>`);
+
+let toastTimer: ReturnType<typeof setTimeout> | undefined;
+/** Kurze Bestätigung, die von selbst verschwindet (bleibt sichtbar, auch wenn man unten in der Liste ist). */
+function toast(text: string) {
+  S.toast = text;
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => { S.toast = ""; render(); }, 3500);
+}
 const notice = (kind: Notice["kind"], text: string, studentId?: string) => S.notices.push({ kind, text, studentId });
 const errText = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
@@ -130,7 +148,7 @@ function viewStart(): Html {
   return html`
     <main class="start">
       <h1>Fehlzeiten-Tracker</h1>
-      <p class="muted">Alle Daten liegen verschlüsselt in einer Datei (z. B. in iCloud Drive). Nichts wird an einen Server gesendet.</p>
+      <p class="muted lead">Alle Daten liegen verschlüsselt in einer Datei (z. B. in iCloud Drive). Nichts wird an einen Server gesendet.</p>
       ${S.startError ? html`<p class="notice error" role="alert">${S.startError}</p>` : ""}
       <div class="tabs small">
         <button data-action="startMode" data-mode="open" class="${S.startMode === "open" ? "on" : ""}">Datei öffnen</button>
@@ -160,6 +178,7 @@ function viewLock(): Html {
   return html`
     <main class="start">
       <h1>Gesperrt</h1>
+      <p class="muted lead">Nach Inaktivität gesperrt. Mit dem Passwort geht es genau da weiter, wo du warst.</p>
       <form data-form="unlock" class="card">
         <label>Passwort <input type="password" name="pw" autocomplete="current-password" required autofocus></label>
         <button type="submit">Entsperren</button>
@@ -196,7 +215,7 @@ function banners(): Html {
   S.notices.forEach((n, i) => {
     out.push(html`<div class="notice ${n.kind}" role="${n.kind === "error" ? "alert" : "status"}"><span>${n.text}</span>
       <span>${n.studentId ? html`<button data-action="detail" data-sid="${n.studentId}">Details</button>` : ""}
-      <button class="ghost" data-action="dismiss" data-i="${i}" aria-label="Schließen">×</button></span></div>`);
+      <button class="ghost" data-action="dismiss" data-i="${i}" aria-label="Schließen">${icon("x")}</button></span></div>`);
   });
   return html`<div class="banners">${out}</div>`;
 }
@@ -219,9 +238,9 @@ function viewWeek(): Html {
 
   return html`
     <div class="weeknav">
-      <button class="ghost" data-action="weekShift" data-d="-7" aria-label="Vorwoche">‹</button>
+      <button class="ghost" data-action="weekShift" data-d="-7" aria-label="Vorwoche">${icon("prev")}</button>
       <div><strong>${weekLabel(S.week)}</strong>${isThisDefault ? "" : html` <button class="link" data-action="weekDefault">zur aktuellen Woche</button>`}</div>
-      <button class="ghost" data-action="weekShift" data-d="7" aria-label="Folgewoche">›</button>
+      <button class="ghost" data-action="weekShift" data-d="7" aria-label="Folgewoche">${icon("next")}</button>
     </div>
     ${students.length === 0 ? html`<p class="card">In dieser Klasse gibt es keine aktiven Schüler:innen.</p>` : ""}
     ${students.map(({ studentId: id, name }) => {
@@ -229,26 +248,26 @@ function viewWeek(): Html {
       const r = rows.get(id);
       return html`
         <section class="student card">
-          <header><strong>${name}</strong>${r ? html`<span class="muted">Stand: ${statusChip(r)} ${r.totalDays} Tage, Rest ${r.remainderHours} Std</span>` : ""}</header>
+          <header><strong class="name">${name}</strong>${r ? html`<span class="stand">${statusChip(r)}<span class="muted num-t">${r.totalDays} Tage · Rest ${r.remainderHours} Std</span></span>` : ""}</header>
           <div class="fields">
             <label>Fehltage <input inputmode="numeric" pattern="[0-9]*" data-draft="days" data-sid="${id}" value="${d.days}" placeholder="0"></label>
             <label>Fehlstunden <input inputmode="numeric" pattern="[0-9]*" data-draft="hours" data-sid="${id}" value="${d.hours}" placeholder="0"></label>
-            <label class="grow">Bemerkung <input data-draft="note" data-sid="${id}" value="${d.note}" maxlength="200"></label>
+            <label class="grow">Bemerkung <input class="note" data-draft="note" data-sid="${id}" placeholder="optional" value="${d.note}" maxlength="200"></label>
           </div>
           <div class="lates">
             <span class="label">Verspätungen</span>
             ${d.lates.map((l, i) => html`<span class="chip late">${formatDate(l.date).slice(0, 6)} · ${l.hour}. Std · ${l.minutes} Min
-              <button class="x" data-action="delLate" data-sid="${id}" data-i="${i}" aria-label="Verspätung entfernen">×</button></span>`)}
+              <button class="x" data-action="delLate" data-sid="${id}" data-i="${i}" aria-label="Verspätung entfernen">${icon("x")}</button></span>`)}
             <span class="late-add">
               <select data-late-day="${id}" aria-label="Tag">${days.map((dd, i) => html`<option value="${i}">${["Mo", "Di", "Mi", "Do", "Fr"][i]} ${formatDate(dd).slice(0, 6)}</option>`)}</select>
               <select data-late-hour="${id}" aria-label="Unterrichtsstunde">${Array.from({ length: 10 }, (_, i) => html`<option value="${i + 1}">${i + 1}. Std</option>`)}</select>
               <input data-late-min="${id}" inputmode="numeric" pattern="[0-9]*" placeholder="Min" aria-label="Minuten zu spät">
-              <button data-action="addLate" data-sid="${id}">＋</button>
+              <button class="ghost" data-action="addLate" data-sid="${id}" aria-label="Verspätung hinzufügen">${icon("plus")}<span class="btn-text">Hinzufügen</span></button>
             </span>
           </div>
         </section>`;
     })}
-    ${students.length ? html`<div class="actions"><button data-action="saveWeek">Woche speichern</button></div>` : ""}`;
+    ${students.length ? html`<div class="actions savebar"><button data-action="saveWeek">Woche speichern</button></div>` : ""}`;
 }
 
 function currentHalfYearId(): string {
@@ -262,11 +281,15 @@ function viewOverview(): Html {
   const hid = currentHalfYearId();
   const hy = t.data.halfYears.find((h) => h.id === hid);
   if (!hy) return html`<p class="card">Lege zuerst unter „Einstellungen“ ein Halbjahr an.</p>`;
-  const rows = t.overview(S.classId, { halfYearId: hid });
+  const rows = [...t.overview(S.classId, { halfYearId: hid })];
+  if (S.sort === "days") rows.sort((a, b) => b.totalDays - a.totalDays || b.totalHours - a.totalHours);
   return html`
     <div class="toolbar">
       <label class="inline">Halbjahr
         <select data-field="halfYear">${t.data.halfYears.map((h) => html`<option value="${h.id}" ${h.id === hid ? raw("selected") : ""}>${h.name}</option>`)}</select></label>
+      <label class="inline">Sortierung
+        <select data-field="sort"><option value="days" ${S.sort === "days" ? raw("selected") : ""}>Fehltage (kritisch zuerst)</option><option value="name" ${S.sort === "name" ? raw("selected") : ""}>Vorname</option></select></label>
+      <span class="spacer"></span>
       <button class="ghost" data-action="overviewCsv">CSV</button>
       <button class="ghost" data-action="overviewPrint">Drucken / PDF</button>
     </div>
@@ -287,7 +310,7 @@ function viewDetail(): Html {
   const r = d.result;
   return html`
     <div class="toolbar">
-      <button class="ghost" data-action="tab" data-screen="overview">‹ Übersicht</button>
+      <button class="ghost" data-action="tab" data-screen="overview">${icon("prev")}Übersicht</button>
       <button class="ghost" data-action="detailCsv">CSV</button>
       <button class="ghost" data-action="detailPrint">Drucken / PDF</button>
     </div>
@@ -351,7 +374,7 @@ function viewSettings(): Html {
     html`<label>${label}<input type="number" min="0" name="${name}" value="${s[name] as number}" required>${hint ? html`<small class="muted">${hint}</small>` : ""}</label>`;
   return html`
     <form data-form="settings" class="card"><h3>Regeln und Schwellen</h3>
-      <div class="grid">
+      <div class="grid top-aligned">
         ${num("longLateMinutes", "Lange Verspätung ab (Min)", "zählt sofort als 1 Fehlstunde")}
         ${num("freeShortLates", "Folgenlose kurze Verspätungen", "danach zählt jede weitere als Fehlstunde")}
         ${num("hoursPerDay", "Fehlstunden je Fehltag")}
@@ -401,14 +424,15 @@ function viewApp(): Html {
       ${classSelect()}
       <span class="spacer"></span>
       ${S.dirty ? html`<button data-action="save" class="dirty">Sichern ●</button>` : html`<span class="muted saved">gesichert</span>`}
-      <button class="ghost" data-action="lock">Sperren</button>
+      <button class="ghost" data-action="lock">${icon("lock")}Sperren</button>
     </header>
     <nav class="tabs">${nav.map(([k, label]) => html`<button data-action="tab" data-screen="${k}" class="${screen === k || (screen === "detail" && k === "overview") ? "on" : ""}">${label}</button>`)}</nav>
     <main>
       ${banners()}
       ${screen === "week" ? viewWeek() : screen === "overview" ? viewOverview() : screen === "detail" ? viewDetail()
         : screen === "students" ? viewStudents() : viewSettings()}
-    </main>`;
+    </main>
+    ${S.toast ? html`<div class="toast" role="status">${S.toast}</div>` : ""}`;
 }
 
 function render() {
@@ -467,10 +491,10 @@ async function onSubmit(form: HTMLFormElement) {
       for (const k of ["longLateMinutes", "freeShortLates", "hoursPerDay", "warnDays", "dueDays", "reminderHour", "lockMinutes", "retentionMonths"] as const) {
         patch[k] = Number(val(form, k));
       }
-      t!.updateSettings(patch); touched(); notice("info", "Einstellungen gespeichert."); break;
+      t!.updateSettings(patch); touched(); toast("Einstellungen gespeichert"); break;
     }
     case "filed": t!.markReportFiled(S.detailId, val(form, "date"), currentHalfYearId() || undefined); touched(); break;
-    case "password": await S.session!.changePassword(val(form, "pw")); notice("info", "Passwort geändert und Datei neu gespeichert."); S.dirty = false; break;
+    case "password": await S.session!.changePassword(val(form, "pw")); toast("Passwort geändert, Datei neu gespeichert"); S.dirty = false; break;
   }
 }
 
@@ -496,7 +520,7 @@ async function onClick(el: HTMLElement) {
     case "tab": S.screen = el.dataset.screen as Screen; S.notices = []; break;
     case "dismiss": S.notices.splice(Number(el.dataset.i), 1); break;
     case "lock": lock(); break;
-    case "save": if (await persist()) notice("info", "In Datei gesichert."); break;
+    case "save": if (await persist()) toast("In Datei gesichert"); break;
     case "close": if (S.dirty && !confirm("Es gibt ungesicherte Änderungen. Trotzdem schließen?")) break; S.session = null; S.draftKey = ""; break;
     case "gotoWeek": S.classId = el.dataset.cid!; S.week = el.dataset.week!; S.screen = "week"; S.notices = []; break;
     case "weekShift": S.week = addDays(S.week, Number(el.dataset.d)); S.notices = []; break;
@@ -513,7 +537,7 @@ async function onClick(el: HTMLElement) {
     case "saveWeek": {
       const warnings = t!.saveWeek({ classId: S.classId, week: S.week, entries: collectEntries() });
       S.draftKey = ""; S.dirty = true; S.generation++;
-      notice("info", `${weekLabel(S.week)} gespeichert.`);
+      toast(`${weekLabel(S.week)} gespeichert`);
       for (const w of warnings) {
         const text = w.kind === "due"
           ? `Schulversäumnisanzeige fällig: ${w.name} (${w.className}) – ${w.totalDays} Fehltage`
@@ -590,6 +614,7 @@ root.addEventListener("change", (ev) => {
   const f = el.dataset.field;
   if (f === "class") { S.classId = el.value; S.draftKey = ""; }
   else if (f === "halfYear") S.halfYearId = el.value;
+  else if (f === "sort") S.sort = el.value as "days" | "name";
   else if (f === "showArchived") S.showArchived = el.checked;
   else return;
   render();
