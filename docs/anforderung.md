@@ -123,5 +123,5 @@ Festgelegt:
 
 Noch offen:
 
-- [ ] Welches Betriebssystem hat der Computer (Windows, macOS, Linux)?
+- [x] Betriebssystem: Windows-PC und iPad. Deshalb PWA mit verschlüsselter Datei in iCloud Drive, später Homelab (siehe [ADR 0001](adr/0001-pwa-mit-verschluesselter-datei.md)). Das ersetzt „nur lokal ohne Cloud“: Die Datei liegt verschlüsselt in iCloud.
 - [ ] Soll nach einer gestellten Anzeige bei weiteren Fehltagen erneut gewarnt werden, z. B. ab 10 Fehltagen?
