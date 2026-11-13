@@ -20,6 +20,10 @@ npm run build     # Produktions-Build nach dist/
 
 Der Build ist eine statische Seite mit relativen Pfaden und kann in jedem Verzeichnis eines statischen Hosters liegen (z. B. GitHub Pages). Der Host sieht nie Schülerdaten, sondern liefert nur die App aus.
 
+## Veröffentlichen (GitHub Pages)
+
+Einmalig im Repository: **Settings → Pages → Source: GitHub Actions**. Danach baut und veröffentlicht [.github/workflows/pages.yml](.github/workflows/pages.yml) bei jedem Push auf `main` (erst Tests, dann Build). Die App liegt unter `https://<benutzer>.github.io/fehlzeiten-tracker/`.
+
 ## Benutzung
 
 1. App im Browser öffnen und auf dem iPad „Zum Home-Bildschirm“, auf Windows in Edge/Chrome „Als App installieren“.
