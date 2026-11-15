@@ -380,9 +380,9 @@ function viewOverview(): Html {
       <button class="ghost" data-action="overviewPrint">Drucken / PDF</button>
     </div>
     <div class="table-wrap"><table>
-      <thead><tr><th>Vorname</th><th class="num">Verspät.</th><th class="num">Std aus Versp.</th><th class="num">Fehlstd. gesamt</th><th class="num">Fehltage</th><th>Status</th><th></th></tr></thead>
+      <thead><tr><th>Vorname</th><th class="num" title="Erfasste Fehltage">Fehltage erf.</th><th class="num" title="Erfasste Fehlstunden (ohne Verspätungen)">Fehlstd. erf.</th><th class="num">Verspät.</th><th class="num">Std aus Versp.</th><th class="num">Fehlstd. gesamt</th><th class="num">Fehltage gesamt</th><th>Status</th><th></th></tr></thead>
       <tbody>${rows.map((r) => html`<tr class="${r.status}">
-        <td>${r.name}</td><td class="num">${r.lateCount}</td><td class="num">${r.hoursFromLates}</td><td class="num">${r.totalHours}</td>
+        <td>${r.name}</td><td class="num">${r.recordedDays}</td><td class="num">${r.recordedHours}</td><td class="num">${r.lateCount}</td><td class="num">${r.hoursFromLates}</td><td class="num">${r.totalHours}</td>
         <td class="num"><strong>${r.totalDays}</strong></td><td>${statusChip(r)}</td>
         <td><button class="ghost" data-action="detail" data-sid="${r.studentId}">Details</button></td></tr>`)}</tbody>
     </table></div>
@@ -492,9 +492,11 @@ function viewSettings(): Html {
 
     <section class="card"><h3>Datei und Sicherheit</h3>
       <p class="muted">Datei: ${store.fileName ?? "noch nicht gespeichert"} · Revision ${S.session!.revision}</p>
+      ${store.canOverwrite ? "" : html`<p class="muted">Dieser Browser kann die Datei nicht direkt überschreiben: Jedes Sichern erzeugt eine neue Datei
+        (am iPad über „In Dateien sichern“ → „Ersetzen“). Am PC speichern Edge oder Chrome direkt in die gewählte Datei, ohne Kopien wie „(1)“.</p>`}
       <div class="actions wrap">
         <button data-action="save">Jetzt in Datei sichern</button>
-        <button class="ghost" data-action="backup">Backup herunterladen</button>
+        <button class="ghost" data-action="backup">${store.canOverwrite ? "Backup speichern unter …" : "Backup herunterladen"}</button>
         <button class="ghost" data-action="notifyPermission">Benachrichtigungen erlauben</button>
         <button class="ghost" data-action="lock">Sperren</button>
         <button class="ghost" data-action="close">Datei schließen</button>
@@ -670,7 +672,7 @@ async function onClick(el: HTMLElement) {
       if (h && confirm(`Alle Einträge des Halbjahres „${h.name}“ unwiderruflich löschen?`)) { t!.deleteHalfYear(h.id); S.draftKey = ""; touched(); }
       break;
     }
-    case "backup": download(`fehlzeiten-backup-${today()}.fzt`, await S.session!.exportBackup(), "application/octet-stream"); break;
+    case "backup": await store.saveCopy(await S.session!.exportBackup(), `fehlzeiten-backup-${today()}.fzt`); toast("Backup gespeichert"); break;
     case "notifyPermission":
       if ("Notification" in window) notice("info", `Benachrichtigungen: ${await Notification.requestPermission()}`);
       else notice("warn", "Dieser Browser unterstützt keine Benachrichtigungen. Hinweise erscheinen in der App.");

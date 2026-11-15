@@ -44,7 +44,7 @@ Pro Schüler:in und Schulwoche (Kalenderwoche) werden erfasst:
 
 ### F3 – Übersicht
 
-- Tabelle aller Schüler:innen einer Klasse mit: Anzahl Verspätungen, daraus resultierende Fehlstunden, unentschuldigte Fehlstunden gesamt, umgerechnete Fehltage gesamt, Status (siehe Ampel unten).
+- Tabelle aller Schüler:innen einer Klasse mit: erfasste Fehltage, erfasste Fehlstunden (ohne Verspätungen), Anzahl Verspätungen, daraus resultierende Fehlstunden, unentschuldigte Fehlstunden gesamt, umgerechnete Fehltage gesamt, Status (siehe Ampel unten).
 - Sortierbar nach Fehltagen, damit kritische Fälle oben stehen.
 - Detailansicht je Schüler:in mit allen Wocheneinträgen und der nachvollziehbaren Berechnung (welche Verspätung zählte als wievielte Fehlstunde).
 - Export der Übersicht und der Detailansicht als PDF oder CSV, z. B. als Anlage zur Schulversäumnisanzeige.

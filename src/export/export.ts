@@ -39,8 +39,8 @@ export function overviewCsv({ className, halfYear, rows }: OverviewInput): strin
   const out = [
     line(`Klasse ${className}`, halfYear.name),
     "",
-    line("Vorname", "Verspätungen", "Fehlstunden aus Verspätungen", "Fehlstunden gesamt", "Fehltage gesamt", "Status"),
-    ...rows.map((r) => line(r.name, r.lateCount, r.hoursFromLates, r.totalHours, r.totalDays, statusLabel(r.status, r.filedOn))),
+    line("Vorname", "Erfasste Fehltage", "Erfasste Fehlstunden", "Verspätungen", "Fehlstunden aus Verspätungen", "Fehlstunden gesamt", "Fehltage gesamt", "Status"),
+    ...rows.map((r) => line(r.name, r.recordedDays, r.recordedHours, r.lateCount, r.hoursFromLates, r.totalHours, r.totalDays, statusLabel(r.status, r.filedOn))),
   ];
   return BOM + out.join(CRLF) + CRLF;
 }
@@ -88,14 +88,14 @@ const page = (title: string, body: string) =>
 export function overviewHtml({ className, halfYear, rows }: OverviewInput): string {
   const tr = rows
     .map(
-      (r) => `<tr><td>${esc(r.name)}</td><td class="num">${r.lateCount}</td><td class="num">${r.hoursFromLates}</td>` +
+      (r) => `<tr><td>${esc(r.name)}</td><td class="num">${r.recordedDays}</td><td class="num">${r.recordedHours}</td><td class="num">${r.lateCount}</td><td class="num">${r.hoursFromLates}</td>` +
         `<td class="num">${r.totalHours}</td><td class="num">${r.totalDays}</td><td>${esc(statusLabel(r.status, r.filedOn))}</td></tr>`,
     )
     .join("");
   return page(
     `Fehlzeiten Klasse ${className}`,
     `<h1>Klasse ${esc(className)}</h1><p class="muted">${esc(halfYear.name)} (${esc(halfYear.start)} bis ${esc(halfYear.end)})</p>` +
-      `<table><thead><tr><th>Vorname</th><th>Verspätungen</th><th>Fehlstunden aus Verspätungen</th><th>Fehlstunden gesamt</th><th>Fehltage gesamt</th><th>Status</th></tr></thead><tbody>${tr}</tbody></table>`,
+      `<table><thead><tr><th>Vorname</th><th>Erfasste Fehltage</th><th>Erfasste Fehlstunden</th><th>Verspätungen</th><th>Fehlstunden aus Verspätungen</th><th>Fehlstunden gesamt</th><th>Fehltage gesamt</th><th>Status</th></tr></thead><tbody>${tr}</tbody></table>`,
   );
 }
 

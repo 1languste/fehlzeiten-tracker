@@ -33,7 +33,7 @@ Einmalig im Repository: **Settings → Pages → Source: GitHub Actions**. Danac
    - iPad (Safari): nach dem Speichern erscheint der Teilen-Dialog, dort „In Dateien sichern“ und die vorhandene Datei ersetzen.
 4. Wöchentlich unter **Erfassen** die Vorwoche eintragen. Die Übersicht zeigt Ampel und Warnungen.
 
-Das Passwort lässt sich nicht zurücksetzen. Backups: Einstellungen → „Backup herunterladen“.
+Das Passwort lässt sich nicht zurücksetzen. Backups: Einstellungen → „Backup speichern unter …“ (Edge/Chrome, mit Ordnerwahl) bzw. „Backup herunterladen“.
 
 ## Aufbau
 

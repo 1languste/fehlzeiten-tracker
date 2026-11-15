@@ -399,10 +399,12 @@ export function createTracker(opts: { data?: Data; now?: () => string } = {}): T
       const rows = data.students
         .filter((s) => s.classId === classId && (includeArchived || !s.archived))
         .map((s): OverviewRow => {
-          const r = calculate(absencesOf(s.id, h), data.settings);
+          const a = absencesOf(s.id, h);
+          const r = calculate(a, data.settings);
           const filed = data.filed.find((f) => f.studentId === s.id && f.halfYearId === h.id);
           return {
             studentId: s.id, name: s.name, archived: s.archived,
+            recordedDays: a.missedDays, recordedHours: a.missedHours,
             lateCount: r.longLates + r.shortLates,
             hoursFromLates: r.hoursFromLongLates + r.hoursFromShortLates,
             totalHours: r.totalHours, totalDays: r.totalDays, remainderHours: r.remainderHours,

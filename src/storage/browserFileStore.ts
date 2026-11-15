@@ -38,11 +38,15 @@ export interface BrowserStore extends FileStore {
   /** true, wenn Speichern ohne Dialog möglich ist (Dateizugriff vorhanden). */
   readonly silent: boolean;
   readonly fileName: string | null;
+  /** true, wenn der Browser Dateien direkt überschreiben und Speicherorte wählen lässt (Edge/Chrome). */
+  readonly canOverwrite: boolean;
   /** Gemerkte Datei aus einer früheren Sitzung laden (nur mit Dateizugriff). */
   restore(): Promise<void>;
   /** Dateiauswahl (nur aus einem Klick heraus aufrufen). */
   pick(): Promise<void>;
   forget(): Promise<void>;
+  /** Kopie (Backup) speichern: mit Ordnerwahl, wenn möglich, sonst als Download. Nur aus einem Klick heraus. */
+  saveCopy(bytes: Uint8Array, fileName: string): Promise<void>;
 }
 
 export function createBrowserStore(suggestedName = "fehlzeiten.fzt"): BrowserStore {
@@ -51,6 +55,22 @@ export function createBrowserStore(suggestedName = "fehlzeiten.fzt"): BrowserSto
   let name: string | null = null;
 
   const canHandle = typeof w.showOpenFilePicker === "function";
+  const canSavePick = typeof w.showSaveFilePicker === "function";
+
+  function download(bytes: Uint8Array, fileName: string): void {
+    const url = URL.createObjectURL(new Blob([bytes as BlobPart], { type: "application/octet-stream" }));
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = fileName;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 10_000);
+  }
+
+  async function writeTo(h: Handle, bytes: Uint8Array): Promise<void> {
+    const writable = await h.createWritable();
+    await writable.write(bytes);
+    await writable.close();
+  }
 
   async function ensurePermission(h: Handle): Promise<void> {
     const opts = { mode: "readwrite" };
@@ -72,17 +92,13 @@ export function createBrowserStore(suggestedName = "fehlzeiten.fzt"): BrowserSto
         /* sonst: auf Download ausweichen */
       }
     }
-    const url = URL.createObjectURL(file);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = fileName;
-    a.click();
-    setTimeout(() => URL.revokeObjectURL(url), 10_000);
+    download(bytes, fileName);
   }
 
   return {
     get silent() { return !!handle; },
     get fileName() { return name; },
+    get canOverwrite() { return canHandle && canSavePick; },
 
     async restore() {
       if (!canHandle) return;
@@ -119,16 +135,19 @@ export function createBrowserStore(suggestedName = "fehlzeiten.fzt"): BrowserSto
     },
 
     async write(bytes) {
-      if (!handle && typeof w.showSaveFilePicker === "function") {
-        handle = await w.showSaveFilePicker({ suggestedName });
+      if (!handle && canSavePick) {
+        try {
+          handle = await w.showSaveFilePicker({ suggestedName });
+        } catch (e) {
+          if ((e as Error).name === "AbortError") throw new Error("Speichern abgebrochen.");
+          throw e;
+        }
         name = handle.name;
         await idb((s) => s.put(handle, KEY), "readwrite");
       }
       if (handle) {
         await ensurePermission(handle);
-        const writable = await handle.createWritable();
-        await writable.write(bytes);
-        await writable.close();
+        await writeTo(handle, bytes);
         return;
       }
       picked = bytes;
@@ -138,6 +157,19 @@ export function createBrowserStore(suggestedName = "fehlzeiten.fzt"): BrowserSto
     async forget() {
       handle = null; picked = null; name = null;
       await idb((s) => s.delete(KEY), "readwrite");
+    },
+
+    async saveCopy(bytes, fileName) {
+      if (!canSavePick) { download(bytes, fileName); return; }
+      let h: Handle;
+      try {
+        h = await w.showSaveFilePicker({ suggestedName: fileName });
+      } catch (e) {
+        if ((e as Error).name === "AbortError") throw new Error("Backup abgebrochen.");
+        throw e;
+      }
+      // Die gewählte Datei nicht als Arbeitsdatei merken: das Backup bleibt eine eigenständige Kopie.
+      await writeTo(h, bytes);
     },
   };
 }

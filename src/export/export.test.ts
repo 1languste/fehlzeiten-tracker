@@ -36,9 +36,9 @@ describe("CSV", () => {
     const lines = csv.replace(/^﻿/, "").split(CRLF);
     expect(csv.startsWith("﻿")).toBe(true); // BOM, damit Excel Umlaute richtig liest
     expect(lines[0]).toBe("Klasse 5a;1. Halbjahr 2026/27");
-    expect(lines[2]).toBe("Vorname;Verspätungen;Fehlstunden aus Verspätungen;Fehlstunden gesamt;Fehltage gesamt;Status");
-    expect(lines[3]).toBe("Ben;0;0;0;5;Erledigt (Anzeige gestellt am 2026-11-14)");
-    expect(lines[4]).toBe("Anna;5;3;4;0;Grün");
+    expect(lines[2]).toBe("Vorname;Erfasste Fehltage;Erfasste Fehlstunden;Verspätungen;Fehlstunden aus Verspätungen;Fehlstunden gesamt;Fehltage gesamt;Status");
+    expect(lines[3]).toBe("Ben;5;0;0;0;0;5;Erledigt (Anzeige gestellt am 2026-11-14)");
+    expect(lines[4]).toBe("Anna;0;1;5;3;4;0;Grün");
   });
 
   it("neutralisiert Zellen, die Excel als Formel deuten würde, und maskiert Semikolons", () => {

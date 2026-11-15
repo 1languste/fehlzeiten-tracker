@@ -68,6 +68,10 @@ export interface OverviewRow {
   studentId: string;
   name: string;
   archived: boolean;
+  /** Erfasste Fehltage (ohne Fehltage, die erst aus Fehlstunden entstehen). */
+  recordedDays: number;
+  /** Erfasste Fehlstunden (ohne Fehlstunden aus Verspätungen). */
+  recordedHours: number;
   lateCount: number;
   hoursFromLates: number;
   totalHours: number;
