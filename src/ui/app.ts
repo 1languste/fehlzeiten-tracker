@@ -3,16 +3,20 @@
  * alle Dateioperationen in Session/FileStore. Im Browser geprüft, nicht per Unit-Test.
  */
 import { addDays, defaultEntryWeek, schoolDays, type IsoDate } from "../core/weeks";
-import { detailCsv, detailHtml, describeLate, overviewCsv, overviewHtml, statusLabel } from "../export/export";
+import { absenceAmount, detailCsv, detailHtml, describeLate, overviewCsv, overviewHtml, statusLabel } from "../export/export";
 import { createBrowserStore } from "../storage/browserFileStore";
 import { createSession, openSession, type Session } from "../storage/session";
-import { emptyEntry } from "../tracker/tracker";
-import type { AppSettings, Late, OverviewRow, WeekEntry } from "../tracker/types";
+import type { Absence, AppSettings, Late, OverviewRow, Warning, WeekEntry } from "../tracker/types";
 import { formatDate, parseCount, suggestHalfYear, weekLabel } from "./format";
 import { html, raw, type Html } from "./html";
 
 type Screen = "week" | "overview" | "students" | "settings" | "detail";
-interface Draft { days: string; hours: string; note: string; lates: Late[] }
+/**
+ * Bearbeitungsstand einer Person in der gewählten Woche. Jede Änderung wird sofort gespeichert.
+ * extraDays/extraHours: ältere Wochensummen ohne Tag (bleiben erhalten, bis sie bewusst entfernt werden).
+ * base: zuletzt gespeicherter Eintrag, damit unbekannte Felder beim Speichern erhalten bleiben.
+ */
+interface Draft { note: string; lates: Late[]; absences: Absence[]; extraDays: number; extraHours: number; base: WeekEntry }
 interface Notice { kind: "info" | "warn" | "due" | "error"; text: string; studentId?: string }
 
 const store = createBrowserStore();
@@ -60,6 +64,7 @@ const ICONS: Record<string, string> = {
   prev: '<path d="M15 6l-6 6 6 6"/>', next: '<path d="M9 6l6 6-6 6"/>',
   x: '<path d="M6 6l12 12M18 6L6 18"/>', plus: '<path d="M12 5v14M5 12h14"/>',
   lock: '<rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 018 0v3"/>',
+  check: '<path d="M5 12l5 5L20 7"/>',
 };
 const icon = (name: keyof typeof ICONS): Html =>
   raw(`<svg class="ic" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${ICONS[name]}</svg>`);
@@ -106,13 +111,45 @@ function loadDraft() {
   S.draftKey = key;
   S.draft = {};
   if (!S.classId) return;
-  for (const row of tracker().getWeek(S.classId, S.week)) {
-    const e = row.entry;
-    S.draft[row.studentId] = {
-      days: e.missedDays ? String(e.missedDays) : "", hours: e.missedHours ? String(e.missedHours) : "",
-      note: e.note, lates: e.lates,
-    };
+  for (const row of tracker().getWeek(S.classId, S.week)) S.draft[row.studentId] = draftOf(row.entry);
+}
+
+const sumDays = (a: Absence[]) => a.filter((x) => x.fullDay).length;
+const sumHours = (a: Absence[]) => a.reduce((n, x) => n + (x.fullDay ? 0 : x.hours), 0);
+
+function draftOf(e: WeekEntry): Draft {
+  const absences = e.absences ?? [];
+  return {
+    note: e.note, lates: e.lates, absences, base: e,
+    extraDays: e.missedDays - sumDays(absences), extraHours: e.missedHours - sumHours(absences),
+  };
+}
+
+/** Wocheneintrag aus dem Bearbeitungsstand: Summen = Tageseinträge + ältere Angaben ohne Tag. */
+const entryOf = (d: Draft): WeekEntry => ({
+  ...d.base, note: d.note, lates: d.lates, absences: d.absences,
+  missedDays: d.extraDays + sumDays(d.absences), missedHours: d.extraHours + sumHours(d.absences),
+});
+
+/** Speichert den Eintrag einer Person sofort. Bei Fehlern bleibt alles beim Alten. */
+function commit(sid: string, next: Draft) {
+  const entry = entryOf(next);
+  const warnings = tracker().saveEntry({ classId: S.classId, week: S.week, studentId: sid, entry });
+  S.draft[sid] = { ...next, base: entry };
+  touched();
+  announce(warnings);
+}
+
+function announce(warnings: Warning[]) {
+  for (const w of warnings) {
+    // „fällig“ steht dauerhaft im roten Banner (bis die Anzeige als gestellt markiert ist), hier nur die Vorwarnung
+    if (w.kind === "warn") notice("warn", `Vorwarnung: ${w.name} (${w.className}) – ${w.totalDays} Fehltage`, w.studentId);
   }
+  // Systembenachrichtigungen bleiben im Benachrichtigungscenter/Sperrbildschirm sichtbar: nur Anzahl, keine Namen.
+  const due = warnings.filter((w) => w.kind === "due").length;
+  const warn = warnings.length - due;
+  if (due) systemNotify("Schulversäumnisanzeige fällig", `${due === 1 ? "1 Anzeige ist" : `${due} Anzeigen sind`} fällig. Details in der App.`);
+  if (warn) systemNotify("Vorwarnung Fehlzeiten", `${warn === 1 ? "1 Vorwarnung" : `${warn} Vorwarnungen`}. Details in der App.`);
 }
 
 async function persist(): Promise<boolean> {
@@ -244,29 +281,79 @@ function viewWeek(): Html {
     </div>
     ${students.length === 0 ? html`<p class="card">In dieser Klasse gibt es keine aktiven Schüler:innen.</p>` : ""}
     ${students.map(({ studentId: id, name }) => {
-      const d = S.draft[id] ?? { days: "", hours: "", note: "", lates: [] };
+      const d = S.draft[id] ?? draftOf(emptyWeekEntry);
       const r = rows.get(id);
+      const dayLabel = (iso: IsoDate) => `${DAY_NAMES[days.indexOf(iso)] ?? ""} ${formatDate(iso).slice(0, 6)}`;
+      const daySelect = (attr: string) =>
+        html`<select ${raw(`data-${attr}-day`)}="${id}" aria-label="Tag">${days.map((dd, i) => html`<option value="${i}">${dayLabel(dd)}</option>`)}</select>`;
       return html`
         <section class="student card">
-          <header><strong class="name">${name}</strong>${r ? html`<span class="stand">${statusChip(r)}<span class="muted num-t">${r.totalDays} Tage · Rest ${r.remainderHours} Std</span></span>` : ""}</header>
-          <div class="fields">
-            <label>Fehltage <input inputmode="numeric" pattern="[0-9]*" data-draft="days" data-sid="${id}" value="${d.days}" placeholder="0"></label>
-            <label>Fehlstunden <input inputmode="numeric" pattern="[0-9]*" data-draft="hours" data-sid="${id}" value="${d.hours}" placeholder="0"></label>
-            <label class="grow">Bemerkung <input class="note" data-draft="note" data-sid="${id}" placeholder="optional" value="${d.note}" maxlength="200"></label>
+          <header><strong class="name">${name}</strong><span class="stand" data-stand="${id}">${standHtml(r)}</span></header>
+          <div class="entries">
+            <div class="label">Fehlzeiten<small class="num-t" data-sum="${id}">${weekSum(d)}</small></div>
+            <div class="entry-body">
+              ${d.extraDays ? html`<span class="chip entry legacy" title="Ältere Angabe ohne Tag">ohne Tag · <strong>${plural(d.extraDays, "Tag", "Tage")}</strong>
+                <button class="x" data-action="delExtra" data-kind="days" data-sid="${id}" aria-label="Fehltage ohne Tag entfernen">${icon("x")}</button></span>` : ""}
+              ${d.extraHours ? html`<span class="chip entry legacy" title="Ältere Angabe ohne Tag">ohne Tag · <strong>${d.extraHours} Std</strong>
+                <button class="x" data-action="delExtra" data-kind="hours" data-sid="${id}" aria-label="Fehlstunden ohne Tag entfernen">${icon("x")}</button></span>` : ""}
+              ${d.absences.map((a, i) => html`<span class="chip entry ${a.fullDay ? "fullday" : ""}">${dayLabel(a.date)} · <strong>${absenceAmount(a)}</strong>${a.note ? html`<span class="chip-note">· ${a.note}</span>` : ""}
+                <button class="x" data-action="delAbsence" data-sid="${id}" data-i="${i}" aria-label="Fehlzeit entfernen">${icon("x")}</button></span>`)}
+              <span class="entry-add">
+                ${daySelect("abs")}
+                <select data-abs-amount="${id}" aria-label="Umfang"><option value="day">ganzer Tag</option>${Array.from({ length: 10 }, (_, i) => html`<option value="${i + 1}">${i + 1} Std</option>`)}</select>
+                <input class="entry-note" data-abs-note="${id}" placeholder="Bemerkung, z. B. 3.–4. Std" maxlength="200" aria-label="Bemerkung zur Fehlzeit">
+                <button class="ghost" data-action="addAbsence" data-sid="${id}" aria-label="Fehlzeit hinzufügen">${icon("plus")}<span class="btn-text">Hinzufügen</span></button>
+              </span>
+            </div>
           </div>
-          <div class="lates">
-            <span class="label">Verspätungen</span>
-            ${d.lates.map((l, i) => html`<span class="chip late">${formatDate(l.date).slice(0, 6)} · ${l.minutes} Min
-              <button class="x" data-action="delLate" data-sid="${id}" data-i="${i}" aria-label="Verspätung entfernen">${icon("x")}</button></span>`)}
-            <span class="late-add">
-              <select data-late-day="${id}" aria-label="Tag">${days.map((dd, i) => html`<option value="${i}">${["Mo", "Di", "Mi", "Do", "Fr"][i]} ${formatDate(dd).slice(0, 6)}</option>`)}</select>
-              <input data-late-min="${id}" inputmode="numeric" pattern="[0-9]*" placeholder="Min" aria-label="Minuten zu spät">
-              <button class="ghost" data-action="addLate" data-sid="${id}" aria-label="Verspätung hinzufügen">${icon("plus")}<span class="btn-text">Hinzufügen</span></button>
-            </span>
+          <div class="entries">
+            <div class="label">Verspätungen</div>
+            <div class="entry-body">
+              ${d.lates.map((l, i) => html`<span class="chip entry">${dayLabel(l.date)} · <strong>${l.minutes} Min</strong>
+                <button class="x" data-action="delLate" data-sid="${id}" data-i="${i}" aria-label="Verspätung entfernen">${icon("x")}</button></span>`)}
+              <span class="entry-add">
+                ${daySelect("late")}
+                <input data-late-min="${id}" inputmode="numeric" pattern="[0-9]*" placeholder="Min" aria-label="Minuten zu spät">
+                <button class="ghost" data-action="addLate" data-sid="${id}" aria-label="Verspätung hinzufügen">${icon("plus")}<span class="btn-text">Hinzufügen</span></button>
+              </span>
+            </div>
+          </div>
+          <div class="entries">
+            <label class="label" for="note-${id}">Bemerkung</label>
+            <div class="entry-body"><input id="note-${id}" class="note" data-draft="note" data-sid="${id}" placeholder="optional, zur ganzen Woche" value="${d.note}" maxlength="200"></div>
           </div>
         </section>`;
     })}
-    ${students.length ? html`<div class="actions savebar"><button data-action="saveWeek">Woche speichern</button></div>` : ""}`;
+    ${students.length ? html`<div class="actions savebar">
+      <span class="muted savebar-hint">Änderungen werden sofort übernommen.</span>
+      ${t.isWeekConfirmed(S.classId, S.week)
+        ? html`<span class="confirmed">${icon("check")}Woche ist als erfasst bestätigt</span>`
+        : html`<button data-action="confirmWeek">${icon("check")}Woche als erfasst bestätigen</button>`}
+    </div>` : ""}`;
+}
+
+const DAY_NAMES = ["Mo", "Di", "Mi", "Do", "Fr"];
+const emptyWeekEntry: WeekEntry = { lates: [], absences: [], missedHours: 0, missedDays: 0, note: "" };
+const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
+
+function standHtml(r: OverviewRow | undefined): Html {
+  return r ? html`${statusChip(r)}<span class="muted num-t">Halbjahr: ${plural(r.totalDays, "Fehltag", "Fehltage")} · Rest ${r.remainderHours} Std</span>` : html``;
+}
+
+/** Wochensumme der Fehlzeiten, z. B. „1 Tag · 3 Std“ (leer, wenn nichts eingetragen ist). */
+function weekSum(d: Draft): string {
+  const e = entryOf(d);
+  const parts = [e.missedDays ? plural(e.missedDays, "Tag", "Tage") : "", e.missedHours ? `${e.missedHours} Std` : ""].filter(Boolean);
+  return parts.length ? `Woche: ${parts.join(" · ")}` : "";
+}
+
+/** Aktualisiert Stand und Wochensumme einer Karte, ohne die Seite neu aufzubauen (Fokus und Klicks bleiben erhalten). */
+function refreshCard(sid: string) {
+  const r = tracker().overview(S.classId).find((x) => x.studentId === sid);
+  const stand = root.querySelector(`[data-stand="${sid}"]`);
+  if (stand) stand.innerHTML = String(standHtml(r));
+  const sum = root.querySelector(`[data-sum="${sid}"]`);
+  if (sum && S.draft[sid]) sum.textContent = weekSum(S.draft[sid]!);
 }
 
 function currentHalfYearId(): string {
@@ -339,6 +426,11 @@ function viewDetail(): Html {
       ${d.weeks.length ? html`<div class="table-wrap"><table><thead><tr><th>Woche</th><th class="num">Fehltage</th><th class="num">Fehlstd.</th><th>Bemerkung</th></tr></thead>
         <tbody>${d.weeks.map((w) => html`<tr><td>${weekLabel(w.week)}</td><td class="num">${w.missedDays}</td><td class="num">${w.missedHours}</td><td>${w.note}</td></tr>`)}</tbody></table></div>`
         : html`<p class="muted">Keine Einträge.</p>`}
+    </section>
+    <section class="card"><h3>Fehlzeiten nach Tagen</h3>
+      ${d.absences.length ? html`<div class="table-wrap"><table><thead><tr><th>Datum</th><th>Umfang</th><th>Bemerkung</th></tr></thead>
+        <tbody>${d.absences.map((a) => html`<tr><td>${formatDate(a.date)}</td><td>${absenceAmount(a)}</td><td>${a.note}</td></tr>`)}</tbody></table></div>`
+        : html`<p class="muted">Keine tageweise erfassten Fehlzeiten.</p>`}
     </section>
     <section class="card"><h3>Verspätungen</h3>
       ${d.lateExplanation.length ? html`<div class="table-wrap"><table><thead><tr><th>Datum</th><th class="num">Min</th><th>Wirkung</th></tr></thead>
@@ -434,7 +526,18 @@ function viewApp(): Html {
     ${S.toast ? html`<div class="toast" role="status">${S.toast}</div>` : ""}`;
 }
 
+// Während ein Finger/die Maus gedrückt ist, nicht neu aufbauen: sonst ginge der folgende Klick ins Leere.
+let pointerDown = false, renderPending = false;
+document.addEventListener("pointerdown", () => { pointerDown = true; }, { capture: true, passive: true });
+for (const type of ["pointerup", "pointercancel"]) {
+  document.addEventListener(type, () => {
+    pointerDown = false;
+    if (renderPending) { renderPending = false; setTimeout(render, 0); }
+  }, { capture: true, passive: true });
+}
+
 function render() {
+  if (pointerDown) { renderPending = true; return; }
   const keep = document.activeElement as HTMLElement | null;
   const focusKey = keep?.getAttribute("data-draft") && keep.getAttribute("data-sid")
     ? `[data-draft="${keep.getAttribute("data-draft")}"][data-sid="${keep.getAttribute("data-sid")}"]` : null;
@@ -497,19 +600,6 @@ async function onSubmit(form: HTMLFormElement) {
   }
 }
 
-function collectEntries(): Record<string, WeekEntry> {
-  const entries: Record<string, WeekEntry> = {};
-  for (const [id, d] of Object.entries(S.draft)) {
-    const days = parseCount(d.days), hours = parseCount(d.hours);
-    if (Number.isNaN(days) || Number.isNaN(hours)) {
-      const name = tracker().data.students.find((s) => s.id === id)?.name ?? id;
-      throw new Error(`${name}: Fehltage und Fehlstunden müssen ganze Zahlen sein.`);
-    }
-    entries[id] = { ...emptyEntry(), missedDays: days, missedHours: hours, note: d.note, lates: d.lates };
-  }
-  return entries;
-}
-
 async function onClick(el: HTMLElement) {
   const a = el.dataset.action;
   const t = S.session ? tracker() : null;
@@ -529,27 +619,42 @@ async function onClick(el: HTMLElement) {
       const q = (attr: string) => root.querySelector<HTMLInputElement | HTMLSelectElement>(`[data-late-${attr}="${sid}"]`)!;
       const minutes = parseCount(q("min").value);
       if (!minutes || Number.isNaN(minutes)) throw new Error("Bitte die Minuten zu spät eintragen (ganze Zahl, 1 bis 45).");
-      S.draft[sid]!.lates.push({ date: schoolDays(S.week)[Number(q("day").value)]!, minutes });
+      const d = S.draft[sid]!;
+      const late = { date: schoolDays(S.week)[Number(q("day").value)]!, minutes };
+      commit(sid, { ...d, lates: [...d.lates, late].sort((a, b) => a.date.localeCompare(b.date)) });
       break;
     }
-    case "delLate": S.draft[el.dataset.sid!]!.lates.splice(Number(el.dataset.i), 1); break;
-    case "saveWeek": {
-      const warnings = t!.saveWeek({ classId: S.classId, week: S.week, entries: collectEntries() });
-      S.draftKey = ""; S.dirty = true; S.generation++;
-      toast(`${weekLabel(S.week)} gespeichert`);
-      for (const w of warnings) {
-        const text = w.kind === "due"
-          ? `Schulversäumnisanzeige fällig: ${w.name} (${w.className}) – ${w.totalDays} Fehltage`
-          : `Vorwarnung: ${w.name} (${w.className}) – ${w.totalDays} Fehltage`;
-        // „fällig“ steht dauerhaft im roten Banner (bis die Anzeige als gestellt markiert ist), hier nur die Vorwarnung
-        if (w.kind === "warn") notice("warn", text, w.studentId);
-      }
-      // Systembenachrichtigungen bleiben im Benachrichtigungscenter/Sperrbildschirm sichtbar: nur Anzahl, keine Namen.
-      const due = warnings.filter((w) => w.kind === "due").length;
-      const warn = warnings.length - due;
-      if (due) systemNotify("Schulversäumnisanzeige fällig", `${due === 1 ? "1 Anzeige ist" : `${due} Anzeigen sind`} fällig. Details in der App.`);
-      if (warn) systemNotify("Vorwarnung Fehlzeiten", `${warn === 1 ? "1 Vorwarnung" : `${warn} Vorwarnungen`}. Details in der App.`);
-      await persist();
+    case "delLate": {
+      const d = S.draft[el.dataset.sid!]!;
+      commit(el.dataset.sid!, { ...d, lates: d.lates.filter((_, i) => i !== Number(el.dataset.i)) });
+      break;
+    }
+    case "addAbsence": {
+      const sid = el.dataset.sid!;
+      const q = (attr: string) => root.querySelector<HTMLInputElement | HTMLSelectElement>(`[data-abs-${attr}="${sid}"]`)!;
+      const amount = q("amount").value;
+      const absence: Absence = {
+        date: schoolDays(S.week)[Number(q("day").value)]!,
+        fullDay: amount === "day", hours: amount === "day" ? 0 : Number(amount), note: q("note").value.trim(),
+      };
+      const d = S.draft[sid]!;
+      commit(sid, { ...d, absences: [...d.absences, absence].sort((a, b) => a.date.localeCompare(b.date) || Number(b.fullDay) - Number(a.fullDay)) });
+      break;
+    }
+    case "delAbsence": {
+      const d = S.draft[el.dataset.sid!]!;
+      commit(el.dataset.sid!, { ...d, absences: d.absences.filter((_, i) => i !== Number(el.dataset.i)) });
+      break;
+    }
+    case "delExtra": {
+      const d = S.draft[el.dataset.sid!]!;
+      commit(el.dataset.sid!, el.dataset.kind === "days" ? { ...d, extraDays: 0 } : { ...d, extraHours: 0 });
+      break;
+    }
+    case "confirmWeek": {
+      t!.confirmWeek(S.classId, S.week);
+      S.dirty = true; S.generation++;
+      if (await persist()) toast(`${weekLabel(S.week)} als erfasst bestätigt`);
       break;
     }
     case "detail": if (el.dataset.cid) S.classId = el.dataset.cid; S.detailId = el.dataset.sid!; S.screen = "detail"; S.notices = []; break;
@@ -608,12 +713,35 @@ root.addEventListener("submit", (ev) => {
 
 root.addEventListener("input", (ev) => {
   const el = ev.target as HTMLInputElement;
-  const field = el.dataset.draft as keyof Draft | undefined;
-  if (field && field !== "lates" && el.dataset.sid && S.draft[el.dataset.sid]) S.draft[el.dataset.sid]![field] = el.value;
+  if (el.dataset.draft === "note" && el.dataset.sid && S.draft[el.dataset.sid]) S.draft[el.dataset.sid]!.note = el.value;
+});
+
+// Enter in den Zusatzfeldern fügt den Eintrag hinzu (wie der Button daneben).
+root.addEventListener("keydown", (ev) => {
+  const el = ev.target as HTMLElement;
+  if (ev.key !== "Enter") return;
+  const sid = el.dataset.absNote ?? el.dataset.lateMin;
+  if (!sid) return;
+  ev.preventDefault();
+  const action = el.dataset.absNote ? "addAbsence" : "addLate";
+  root.querySelector<HTMLElement>(`[data-action="${action}"][data-sid="${sid}"]`)?.click();
 });
 
 root.addEventListener("change", (ev) => {
   const el = ev.target as HTMLInputElement;
+  // Bemerkung zur Woche: beim Verlassen des Feldes speichern, ohne die Seite neu aufzubauen
+  // (ein gleichzeitiger Klick auf einen Button ginge sonst verloren).
+  if (el.dataset.draft === "note" && el.dataset.sid && S.draft[el.dataset.sid]) {
+    const sid = el.dataset.sid;
+    try {
+      commit(sid, { ...S.draft[sid]!, note: el.value });
+      refreshCard(sid);
+    } catch (e) {
+      notice("error", errText(e));
+      render();
+    }
+    return;
+  }
   const f = el.dataset.field;
   if (f === "class") { S.classId = el.value; S.draftKey = ""; }
   else if (f === "halfYear") S.halfYearId = el.value;

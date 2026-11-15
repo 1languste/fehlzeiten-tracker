@@ -1,7 +1,7 @@
 /** Ausgaben als Anlage zur Schulversäumnisanzeige: CSV (Excel, deutsch) und druckbares HTML (-> PDF). */
 import { isoWeekNumber } from "../core/weeks";
 import type { Status } from "../core/rules";
-import type { Detail, HalfYear, LateExplanation, OverviewRow } from "../tracker/types";
+import type { Absence, Detail, HalfYear, LateExplanation, OverviewRow } from "../tracker/types";
 
 const BOM = "﻿";
 const CRLF = "\r\n";
@@ -30,6 +30,9 @@ export function describeLate(l: LateExplanation, longLateMinutes: number): strin
   return `${l.ordinal}. kurze Verspätung: ${l.hours ? "1 Fehlstunde" : "folgenlos"}`;
 }
 
+/** "ganzer Tag" oder "2 Std" */
+export const absenceAmount = (a: Absence): string => (a.fullDay ? "ganzer Tag" : `${a.hours} Std`);
+
 interface OverviewInput { className: string; halfYear: HalfYear; rows: OverviewRow[] }
 
 export function overviewCsv({ className, halfYear, rows }: OverviewInput): string {
@@ -49,6 +52,9 @@ export function detailCsv(d: Detail): string {
     "",
     line("Woche (Montag)", "KW", "Fehltage", "Fehlstunden", "Bemerkung"),
     ...d.weeks.map((w) => line(w.week, isoWeekNumber(w.week), w.missedDays, w.missedHours, w.note)),
+    "",
+    line("Fehlzeit am", "Umfang", "Bemerkung"),
+    ...d.absences.map((a) => line(a.date, absenceAmount(a), a.note)),
     "",
     line("Datum", "Minuten", "Wirkung"),
     ...d.lateExplanation.map((l) => line(l.date, l.minutes, describeLate(l, s.longLateMinutes))),
@@ -101,6 +107,9 @@ export function detailHtml(d: Detail): string {
         `<td class="num">${w.missedHours}</td><td>${esc(w.note)}</td></tr>`,
     )
     .join("");
+  const absences = d.absences
+    .map((a) => `<tr><td>${esc(a.date)}</td><td>${esc(absenceAmount(a))}</td><td>${esc(a.note)}</td></tr>`)
+    .join("");
   const lates = d.lateExplanation
     .map((l) => `<tr><td>${esc(l.date)}</td><td class="num">${l.minutes}</td><td>${esc(describeLate(l, s.longLateMinutes))}</td></tr>`)
     .join("");
@@ -109,6 +118,7 @@ export function detailHtml(d: Detail): string {
     `<h1>${esc(d.student.name)} · Klasse ${esc(d.className)}</h1>` +
     `<p class="muted">${esc(d.halfYear.name)} (${esc(d.halfYear.start)} bis ${esc(d.halfYear.end)}) · Status: ${esc(statusLabel(d.status, d.filedOn))}</p>` +
     `<h2>Wocheneinträge</h2><table><thead><tr><th>Woche (Montag)</th><th>KW</th><th>Fehltage</th><th>Fehlstunden</th><th>Bemerkung</th></tr></thead><tbody>${weeks}</tbody></table>` +
+    (absences ? `<h2>Fehlzeiten nach Tagen</h2><table><thead><tr><th>Datum</th><th>Umfang</th><th>Bemerkung</th></tr></thead><tbody>${absences}</tbody></table>` : "") +
     `<h2>Verspätungen</h2><table><thead><tr><th>Datum</th><th>Minuten</th><th>Wirkung</th></tr></thead><tbody>${lates}</tbody></table>` +
     `<h2>Berechnung</h2><ul class="calc">` +
     `<li>Erfasste Fehlstunden: ${d.recordedHours}</li>` +

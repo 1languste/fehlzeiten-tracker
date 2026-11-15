@@ -17,7 +17,7 @@ function fixture(name = "Anna", note = "Arzttermin") {
     classId, week: "2026-11-09",
     entries: {
       [anna]: entry({
-        missedHours: 1, note,
+        missedHours: 1, note, absences: [{ date: "2026-11-10", fullDay: false, hours: 1, note: "3. Std <Sport>" }],
         lates: [late("2026-11-09", 5), late("2026-11-10", 10), late("2026-11-11", 30), late("2026-11-12", 10), late("2026-11-13", 10)],
       }),
       [ben]: entry({ missedDays: 5 }),
@@ -54,6 +54,8 @@ describe("CSV", () => {
     const lines = detailCsv(t.detail(anna)).replace(/^﻿/, "").split(CRLF);
     expect(lines).toContain("Woche (Montag);KW;Fehltage;Fehlstunden;Bemerkung");
     expect(lines).toContain("2026-11-09;46;0;1;Arzttermin");
+    expect(lines).toContain("Fehlzeit am;Umfang;Bemerkung");
+    expect(lines).toContain("2026-11-10;1 Std;3. Std <Sport>");
     expect(lines).toContain("Datum;Minuten;Wirkung");
     expect(lines).toContain("2026-11-09;5;1. kurze Verspätung: folgenlos");
     expect(lines).toContain("2026-11-11;30;lange Verspätung (ab 20 Min): 1 Fehlstunde");
@@ -77,6 +79,8 @@ describe("Druckansicht (HTML)", () => {
     expect(html).toContain("0 Fehltage aus Fehlstunden (4 ÷ 6, abgerundet, Rest 4)");
     expect(html).toContain("Fehltage gesamt: 0");
     expect(html).toContain("3. kurze Verspätung: 1 Fehlstunde");
+    expect(html).toContain("<h2>Fehlzeiten nach Tagen</h2>");
+    expect(html).toContain("<td>2026-11-10</td><td>1 Std</td><td>3. Std &lt;Sport&gt;</td>");
   });
 
   it("maskiert HTML in Namen und Bemerkungen", () => {

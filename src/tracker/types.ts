@@ -19,9 +19,18 @@ export interface HalfYear { id: string; name: string; start: IsoDate; end: IsoDa
 
 export interface Late { date: IsoDate; minutes: number }
 
-/** Eintrag einer Person für eine Woche (so wird er eingegeben). */
+/** Fehlzeit an einem Tag: ganzer Fehltag oder einzelne Fehlstunden, mit optionaler Bemerkung (z. B. „3.–4. Std Sport“). */
+export interface Absence { date: IsoDate; fullDay: boolean; hours: number; note: string }
+
+/**
+ * Eintrag einer Person für eine Woche.
+ * missedDays/missedHours sind die Wochensummen und enthalten die tageweise erfassten Fehlzeiten
+ * plus ältere Angaben ohne Tag (aus Dateien vor der tageweisen Erfassung).
+ */
 export interface WeekEntry {
   lates: Late[];
+  /** Fehlt in Daten aus älteren Dateien. */
+  absences?: Absence[];
   missedHours: number;
   missedDays: number;
   note: string;
@@ -78,6 +87,8 @@ export interface LateExplanation extends Late {
 
 export interface Detail {
   student: Student;
+  /** Tageweise erfasste Fehlzeiten, nach Datum sortiert. */
+  absences: Absence[];
   className: string;
   halfYear: HalfYear;
   weeks: WeekRecord[];

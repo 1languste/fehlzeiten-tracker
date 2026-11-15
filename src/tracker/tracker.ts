@@ -1,7 +1,7 @@
 import { calculate, DEFAULT_SETTINGS, status as statusOf } from "../core/rules";
 import { defaultEntryWeek, isIsoDate, isoWeekNumber, schoolDays, weekStart, type IsoDate } from "../core/weeks";
 import type {
-  AppSettings, Data, Detail, HalfYear, Late, LateExplanation, OverviewRow, Reminder, Student, Warning, WeekEntry, WeekRecord,
+  Absence, AppSettings, Data, Detail, HalfYear, Late, LateExplanation, OverviewRow, Reminder, Student, Warning, WeekEntry, WeekRecord,
 } from "./types";
 
 export class ValidationError extends Error {
@@ -27,13 +27,21 @@ export interface Tracker {
    * Wirft ValidationError und ändert dann nichts.
    */
   saveWeek(p: { classId: string; week: IsoDate; entries: Record<string, WeekEntry> }): Warning[];
+  /**
+   * Speichert (ersetzt) den Eintrag einer Person sofort, ohne die Woche als erfasst zu bestätigen.
+   * Gibt neu erreichte Warnstufen zurück. Wirft ValidationError und ändert dann nichts.
+   */
+  saveEntry(p: { classId: string; week: IsoDate; studentId: string; entry: WeekEntry }): Warning[];
+  /** Bestätigt, dass die Woche für die Klasse vollständig erfasst ist (beendet die Erinnerung). */
+  confirmWeek(classId: string, week: IsoDate): void;
+  isWeekConfirmed(classId: string, week: IsoDate): boolean;
   overview(classId: string, opts?: { halfYearId?: string; includeArchived?: boolean }): OverviewRow[];
   /** Alle Wocheneinträge und die nachvollziehbare Berechnung einer Person (Standard: aktuelles Halbjahr). */
   detail(studentId: string, halfYearId?: string): Detail;
   /** Markiert die Schulversäumnisanzeige als gestellt (Standard: aktuelles Halbjahr). */
   markReportFiled(studentId: string, date: IsoDate, halfYearId?: string): void;
   unmarkReportFiled(studentId: string, halfYearId?: string): void;
-  /** Klassen, deren Vorwoche noch nicht gespeichert wurde. */
+  /** Klassen, deren Vorwoche noch nicht als erfasst bestätigt wurde. */
   reminders(): Reminder[];
   updateSettings(patch: Partial<AppSettings>): void;
   /** Halbjahre, die länger als die Löschfrist zurückliegen. */
@@ -59,18 +67,32 @@ export function emptyData(): Data {
 
 export const emptyEntry = (): WeekEntry => ({ lates: [], missedHours: 0, missedDays: 0, note: "" });
 
+const absencesIn = (e: WeekEntry): Absence[] => e.absences ?? [];
+
 const isEmpty = (e: WeekEntry) =>
-  e.lates.length === 0 && e.missedHours === 0 && e.missedDays === 0 && e.note.trim() === "";
+  e.lates.length === 0 && absencesIn(e).length === 0 && e.missedHours === 0 && e.missedDays === 0 && e.note.trim() === "";
 
 const isCount = (n: number, min: number, max = Infinity) => Number.isInteger(n) && n >= min && n <= max;
 
 const sortedLates = (l: Late[]) => [...l].sort((a, b) => a.date.localeCompare(b.date) || a.minutes - b.minutes);
+const sortedAbsences = (a: Absence[]) => [...a].sort((x, y) => x.date.localeCompare(y.date) || Number(y.fullDay) - Number(x.fullDay));
+
+/** Kopie eines Eintrags; unbekannte Felder (z. B. aus älteren oder neueren Dateien) bleiben erhalten. */
+function copyEntry(e: WeekEntry): WeekEntry {
+  const { studentId: _s, week: _w, ...rest } = e as WeekRecord;
+  const out: WeekEntry = { ...rest, lates: e.lates.map((l) => ({ ...l })) };
+  if (e.absences) out.absences = e.absences.map((a) => ({ ...a }));
+  return out;
+}
 
 /** Beschreibt, was sich an einem Wocheneintrag geändert hat (leer = nichts). */
 function describeChange(old: WeekEntry, next: WeekEntry): string {
   const parts: string[] = [];
   if (old.missedDays !== next.missedDays) parts.push(`Fehltage ${old.missedDays}→${next.missedDays}`);
   if (old.missedHours !== next.missedHours) parts.push(`Fehlstunden ${old.missedHours}→${next.missedHours}`);
+  const oa = absencesIn(old), na = absencesIn(next);
+  if (oa.length !== na.length) parts.push(`Fehlzeiten-Einträge ${oa.length}→${na.length}`);
+  else if (JSON.stringify(sortedAbsences(oa)) !== JSON.stringify(sortedAbsences(na))) parts.push("Fehlzeiten-Einträge geändert");
   if (old.lates.length !== next.lates.length) parts.push(`Verspätungen ${old.lates.length}→${next.lates.length}`);
   else if (JSON.stringify(sortedLates(old.lates)) !== JSON.stringify(sortedLates(next.lates))) parts.push("Verspätungen geändert");
   if (old.note.trim() !== next.note.trim()) parts.push("Bemerkung geändert");
@@ -123,6 +145,27 @@ export function createTracker(opts: { data?: Data; now?: () => string } = {}): T
     const days = schoolDays(week);
     if (!isCount(e.missedHours, 0)) throw new ValidationError("Fehlstunden müssen eine ganze Zahl ab 0 sein.");
     if (!isCount(e.missedDays, 0, 5)) throw new ValidationError("Fehltage müssen eine ganze Zahl von 0 bis 5 sein.");
+    if (e.note.length > 200) throw new ValidationError("Die Bemerkung darf höchstens 200 Zeichen lang sein.");
+    const fullDays = new Set<IsoDate>();
+    let dayCount = 0, hourSum = 0;
+    for (const a of absencesIn(e)) {
+      if (!days.includes(a.date)) throw new ValidationError(`Fehlzeit am ${a.date} liegt nicht in der Schulwoche ab ${week}.`);
+      if (a.note.length > 200) throw new ValidationError("Die Bemerkung darf höchstens 200 Zeichen lang sein.");
+      if (a.fullDay) {
+        if (a.hours !== 0) throw new ValidationError("Ein ganzer Fehltag hat keine zusätzliche Stundenzahl.");
+        fullDays.add(a.date); dayCount++;
+      } else {
+        if (!isCount(a.hours, 1, 12)) throw new ValidationError("Fehlstunden pro Eintrag: ganze Zahl von 1 bis 12.");
+        hourSum += a.hours;
+      }
+    }
+    if (fullDays.size !== dayCount) throw new ValidationError("Für diesen Tag ist bereits ein ganzer Fehltag eingetragen.");
+    if (absencesIn(e).some((a) => !a.fullDay && fullDays.has(a.date))) {
+      throw new ValidationError("An einem ganzen Fehltag können keine einzelnen Fehlstunden eingetragen werden.");
+    }
+    if (e.missedDays < dayCount || e.missedHours < hourSum) {
+      throw new ValidationError("Die Wochensumme ist kleiner als die einzeln eingetragenen Fehlzeiten.");
+    }
     for (const l of e.lates) {
       if (!days.includes(l.date)) throw new ValidationError(`Verspätung am ${l.date} liegt nicht in der Schulwoche ab ${week}.`);
       if (!isCount(l.minutes, 1, 45)) throw new ValidationError("Minuten zu spät: ganze Zahl von 1 bis 45.");
@@ -150,6 +193,48 @@ export function createTracker(opts: { data?: Data; now?: () => string } = {}): T
     const h = halfYearId ? data.halfYears.find((x) => x.id === halfYearId) : halfYearAt(today());
     if (!h) throw new ValidationError("Kein passendes Halbjahr gefunden.");
     return h;
+  }
+
+  function confirm(classId: string, week: IsoDate): void {
+    if (!data.confirmedWeeks.some((c) => c.classId === classId && c.week === week)) {
+      data.confirmedWeeks.push({ classId, week });
+    }
+  }
+
+  /** Prüft alle Einträge, schreibt sie erst dann und liefert neu erreichte Warnstufen. */
+  function write(classId: string, week: IsoDate, entries: Record<string, WeekEntry>): Warning[] {
+    if (!isIsoDate(week) || weekStart(week) !== week) throw new ValidationError("Die Woche muss durch ihren Montag angegeben werden.");
+    if (!halfYearAt(week)) throw new ValidationError("Für diese Woche gibt es noch kein Halbjahr. Bitte zuerst ein Halbjahr anlegen.");
+    for (const [studentId, e] of Object.entries(entries)) {
+      if (student(studentId).classId !== classId) throw new ValidationError("Die Schülerin / der Schüler gehört nicht zu dieser Klasse.");
+      checkEntry(e, week);
+    }
+
+    const h = halfYearAt(week)!;
+    const before = new Map(Object.keys(entries).map((id) => [id, statusFor(id, h)]));
+
+    const kw = isoWeekNumber(week);
+    for (const [studentId, e] of Object.entries(entries)) {
+      const old = data.weeks.find((w) => w.studentId === studentId && w.week === week) ?? emptyEntry();
+      const change = describeChange(old, e);
+      if (change) log(`KW ${kw} · ${student(studentId).name}: ${change}`);
+      data.weeks = data.weeks.filter((w) => !(w.studentId === studentId && w.week === week));
+      if (!isEmpty(e)) data.weeks.push({ ...copyEntry(e), studentId, week });
+    }
+
+    const className = data.classes.find((c) => c.id === classId)?.name ?? "";
+    const warnings: Warning[] = [];
+    for (const [studentId, was] of before) {
+      const now_ = statusFor(studentId, h);
+      const kind = now_ === "red" && was !== "red" ? "due" : now_ === "yellow" && was === "green" && data.settings.preWarning ? "warn" : null;
+      if (kind) {
+        warnings.push({
+          kind, studentId, name: student(studentId).name, className,
+          totalDays: calculate(absencesOf(studentId, h), data.settings).totalDays,
+        });
+      }
+    }
+    return warnings;
   }
 
   return {
@@ -203,53 +288,29 @@ export function createTracker(opts: { data?: Data; now?: () => string } = {}): T
     getWeek(classId, week) {
       return activeIn(classId).map((s) => {
         const rec = data.weeks.find((w) => w.studentId === s.id && w.week === week);
-        const entry: WeekEntry = rec
-          ? { lates: rec.lates.map((l) => ({ ...l })), missedHours: rec.missedHours, missedDays: rec.missedDays, note: rec.note }
-          : emptyEntry();
+        const entry: WeekEntry = rec ? copyEntry(rec) : emptyEntry();
         return { studentId: s.id, name: s.name, entry };
       });
     },
 
     saveWeek({ classId, week, entries }) {
-      // 1. alles prüfen, 2. erst dann schreiben
-      if (!isIsoDate(week) || weekStart(week) !== week) throw new ValidationError("Die Woche muss durch ihren Montag angegeben werden.");
-      if (!halfYearAt(week)) throw new ValidationError("Für diese Woche gibt es noch kein Halbjahr. Bitte zuerst ein Halbjahr anlegen.");
-      for (const [studentId, e] of Object.entries(entries)) {
-        if (student(studentId).classId !== classId) throw new ValidationError("Die Schülerin / der Schüler gehört nicht zu dieser Klasse.");
-        checkEntry(e, week);
-      }
-
-      const h = halfYearAt(week)!;
-      const before = new Map(Object.keys(entries).map((id) => [id, statusFor(id, h)]));
-
-      const kw = isoWeekNumber(week);
-      for (const [studentId, e] of Object.entries(entries)) {
-        const old = data.weeks.find((w) => w.studentId === studentId && w.week === week) ?? emptyEntry();
-        const change = describeChange(old, e);
-        if (change) log(`KW ${kw} · ${student(studentId).name}: ${change}`);
-        data.weeks = data.weeks.filter((w) => !(w.studentId === studentId && w.week === week));
-        if (!isEmpty(e)) {
-          const rec: WeekRecord = { studentId, week, ...e, lates: e.lates.map((l) => ({ ...l })) };
-          data.weeks.push(rec);
-        }
-      }
-      if (!data.confirmedWeeks.some((c) => c.classId === classId && c.week === week)) {
-        data.confirmedWeeks.push({ classId, week });
-      }
-
-      const className = data.classes.find((c) => c.id === classId)?.name ?? "";
-      const warnings: Warning[] = [];
-      for (const [studentId, was] of before) {
-        const now_ = statusFor(studentId, h);
-        const kind = now_ === "red" && was !== "red" ? "due" : now_ === "yellow" && was === "green" && data.settings.preWarning ? "warn" : null;
-        if (kind) {
-          warnings.push({
-            kind, studentId, name: student(studentId).name, className,
-            totalDays: calculate(absencesOf(studentId, h), data.settings).totalDays,
-          });
-        }
-      }
+      const warnings = write(classId, week, entries);
+      confirm(classId, week);
       return warnings;
+    },
+
+    saveEntry({ classId, week, studentId, entry }) {
+      return write(classId, week, { [studentId]: entry });
+    },
+
+    confirmWeek(classId, week) {
+      if (!data.classes.some((c) => c.id === classId)) throw new ValidationError("Unbekannte Klasse.");
+      if (!isIsoDate(week) || weekStart(week) !== week) throw new ValidationError("Die Woche muss durch ihren Montag angegeben werden.");
+      confirm(classId, week);
+    },
+
+    isWeekConfirmed(classId, week) {
+      return data.confirmedWeeks.some((c) => c.classId === classId && c.week === week);
     },
 
     detail(studentId, halfYearId) {
@@ -258,7 +319,7 @@ export function createTracker(opts: { data?: Data; now?: () => string } = {}): T
       const weeks = data.weeks
         .filter((w) => w.studentId === studentId && h.start <= w.week && w.week <= h.end)
         .sort((a, b) => a.week.localeCompare(b.week))
-        .map((w) => ({ ...w, lates: sortedLates(w.lates) }));
+        .map((w) => ({ ...w, lates: sortedLates(w.lates), ...(w.absences ? { absences: sortedAbsences(w.absences) } : {}) }));
       const result = calculate(absencesOf(studentId, h), data.settings);
 
       let ordinal = 0;
@@ -275,6 +336,7 @@ export function createTracker(opts: { data?: Data; now?: () => string } = {}): T
         className: data.classes.find((c) => c.id === s.classId)?.name ?? "",
         halfYear: { ...h },
         weeks,
+        absences: weeks.flatMap((w) => absencesIn(w)).map((a) => ({ ...a })),
         lateExplanation,
         recordedHours: weeks.reduce((n, w) => n + w.missedHours, 0),
         recordedDays: weeks.reduce((n, w) => n + w.missedDays, 0),

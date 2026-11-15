@@ -226,6 +226,14 @@ describe("Korrigieren, Archivieren, Validieren", () => {
     expect(t.data.weeks[0]!.lates).toEqual([old]);
   });
 
+  it("unbekannte Felder eines Eintrags bleiben beim erneuten Speichern erhalten", () => {
+    const { t, classId, anna } = setup();
+    t.saveWeek({ classId, week: W2, entries: { [anna]: { ...entry({ missedDays: 1 }), future: "x" } as WeekEntry } });
+    const loaded = t.getWeek(classId, W2)[0]!.entry;
+    t.saveEntry({ classId, week: W2, studentId: anna, entry: { ...loaded, note: "neu" } });
+    expect((t.data.weeks[0] as unknown as Record<string, unknown>).future).toBe("x");
+  });
+
   it("getWeek liefert alle aktiven Schüler:innen, leere Wochen als 'ohne Fehlzeiten'", () => {
     const { t, classId, anna } = setup();
     const ben = t.addStudent({ name: "Ben", classId });
@@ -305,5 +313,47 @@ describe("Erfassung und Übersicht", () => {
     const ben = t.addStudent({ name: "Ben", classId });
     t.saveWeek({ classId, week: W1, entries: { [anna]: entry({ missedDays: 1 }), [ben]: entry({ missedDays: 3 }) } });
     expect(t.overview(classId).map((r) => r.name)).toEqual(["Ben", "Anna"]);
+  });
+});
+
+describe("Fehlzeiten tageweise und sofortiges Speichern", () => {
+  const day = (date: string, note = "") => ({ date, fullDay: true, hours: 0, note });
+  const hrs = (date: string, hours: number, note = "") => ({ date, fullDay: false, hours, note });
+
+  it("saveEntry speichert sofort, zählt in der Übersicht mit und bestätigt die Woche nicht", () => {
+    const { t, classId, anna } = setup();
+    const absences = [day("2026-11-09", "krank"), hrs("2026-11-10", 2, "3.–4. Std Sport")];
+    t.saveEntry({ classId, week: W2, studentId: anna, entry: entry({ absences, missedDays: 1, missedHours: 2 }) });
+    const row = t.overview(classId)[0]!;
+    expect([row.totalDays, row.totalHours]).toEqual([1, 2]);
+    expect(t.isWeekConfirmed(classId, W2)).toBe(false);
+    expect(t.getWeek(classId, W2)[0]!.entry.absences).toEqual(absences);
+    t.confirmWeek(classId, W2);
+    expect(t.isWeekConfirmed(classId, W2)).toBe(true);
+  });
+
+  it("alte Wochensummen ohne Tag bleiben neben neuen Tageseinträgen erhalten", () => {
+    const { t, classId, anna } = setup();
+    t.saveWeek({ classId, week: W2, entries: { [anna]: entry({ missedDays: 1, missedHours: 3 }) } }); // Altbestand
+    const old = t.getWeek(classId, W2)[0]!.entry;
+    t.saveEntry({ classId, week: W2, studentId: anna, entry: { ...old, absences: [hrs("2026-11-11", 2)], missedHours: 5 } });
+    expect(t.data.weeks[0]).toMatchObject({ missedDays: 1, missedHours: 5, absences: [hrs("2026-11-11", 2)] });
+  });
+
+  it("prüft Tageseinträge und ändert bei Fehlern nichts", () => {
+    const { t, classId, anna } = setup();
+    const bad = (e: Partial<WeekEntry>) => () => t.saveEntry({ classId, week: W2, studentId: anna, entry: entry(e) });
+    expect(bad({ absences: [day("2026-11-16")], missedDays: 1 })).toThrow(ValidationError); // Folgewoche
+    expect(bad({ absences: [day("2026-11-09"), day("2026-11-09")], missedDays: 2 })).toThrow(ValidationError);
+    expect(bad({ absences: [day("2026-11-09"), hrs("2026-11-09", 2)], missedDays: 1, missedHours: 2 })).toThrow(ValidationError);
+    expect(bad({ absences: [hrs("2026-11-09", 0)] })).toThrow(ValidationError);
+    expect(bad({ absences: [hrs("2026-11-09", 2)], missedHours: 1 })).toThrow(ValidationError); // Summe zu klein
+    expect(t.data.weeks).toHaveLength(0);
+  });
+
+  it("Detail listet die Tageseinträge nach Datum", () => {
+    const { t, classId, anna } = setup();
+    t.saveEntry({ classId, week: W2, studentId: anna, entry: entry({ absences: [hrs("2026-11-12", 1), day("2026-11-10")], missedDays: 1, missedHours: 1 }) });
+    expect(t.detail(anna).absences.map((a) => a.date)).toEqual(["2026-11-10", "2026-11-12"]);
   });
 });

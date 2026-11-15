@@ -31,10 +31,12 @@ Pro Schüler:in und Schulwoche (Kalenderwoche) werden erfasst:
 
 | Feld | Typ | Hinweis |
 | --- | --- | --- |
-| Verspätungen | Liste von Einträgen | je Eintrag: Datum, Unterrichtsstunde, Minuten zu spät |
-| Unentschuldigte Fehlstunden | Zahl (ganze Stunden) | einzelne versäumte Unterrichtsstunden |
-| Unentschuldigte Fehltage | Zahl (ganze Tage) | komplett versäumte Schultage |
-| Bemerkung | Freitext, optional | z. B. „Entschuldigung nachgereicht“ |
+| Fehlzeiten | Liste von Einträgen | je Eintrag: Tag, Umfang („ganzer Tag“ oder 1–10 Fehlstunden), Bemerkung optional (z. B. „3.–4. Std Sport“) |
+| Verspätungen | Liste von Einträgen | je Eintrag: Tag, Minuten zu spät |
+| Bemerkung | Freitext, optional | zur ganzen Woche, z. B. „Entschuldigung nachgereicht“ |
+
+- Unentschuldigte Fehltage und Fehlstunden der Woche werden aus den Fehlzeiten-Einträgen summiert. Wochensummen ohne Tag aus älteren Dateien bleiben erhalten und zählen weiter mit.
+- Jede Änderung wird sofort übernommen und ist sofort in Übersicht und Ampel sichtbar. „Woche als erfasst bestätigen“ beendet nur die Erinnerung.
 
 - Die Erfassungsmaske zeigt standardmäßig die vergangene Kalenderwoche.
 - Eine Woche, in der nichts eingetragen wurde, gilt als „ohne Fehlzeiten“.
