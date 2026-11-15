@@ -9,7 +9,7 @@ const W2 = "2026-11-09"; // Montag KW 46
 const entry = (p: Partial<WeekEntry> = {}): WeekEntry => ({
   lates: [], missedHours: 0, missedDays: 0, note: "", ...p,
 });
-const late = (date: string, minutes: number, hour = 1) => ({ date, hour, minutes });
+const late = (date: string, minutes: number) => ({ date, minutes });
 
 /** Tracker mit Klasse 5a, Schülerin Anna und dem Halbjahr 1. 8.-31. 1. */
 function setup(): { t: Tracker; classId: string; anna: string } {
@@ -76,7 +76,7 @@ describe("Detailansicht", () => {
         [anna]: entry({
           missedHours: 1, note: "Arzttermin",
           // bewusst unsortiert eingegeben
-          lates: [late("2026-11-12", 10), late("2026-11-09", 5), late("2026-11-11", 30, 2), late("2026-11-10", 10), late("2026-11-13", 10)],
+          lates: [late("2026-11-12", 10), late("2026-11-09", 5), late("2026-11-11", 30), late("2026-11-10", 10), late("2026-11-13", 10)],
         }),
       },
     });
@@ -217,6 +217,15 @@ describe("Korrigieren, Archivieren, Validieren", () => {
     expect(t.data.weeks).toHaveLength(0);
   });
 
+  it("alte Verspätungen mit Stundenangabe bleiben beim erneuten Speichern erhalten", () => {
+    const { t, classId, anna } = setup();
+    const old = { date: "2026-11-10", hour: 3, minutes: 10 }; // Feld aus älteren .fzt-Dateien
+    t.saveWeek({ classId, week: W2, entries: { [anna]: entry({ lates: [old as never] }) } });
+    const loaded = t.getWeek(classId, W2)[0]!.entry;
+    t.saveWeek({ classId, week: W2, entries: { [anna]: { ...loaded, missedHours: 1 } } });
+    expect(t.data.weeks[0]!.lates).toEqual([old]);
+  });
+
   it("getWeek liefert alle aktiven Schüler:innen, leere Wochen als 'ohne Fehlzeiten'", () => {
     const { t, classId, anna } = setup();
     const ben = t.addStudent({ name: "Ben", classId });
@@ -255,7 +264,6 @@ describe("Korrigieren, Archivieren, Validieren", () => {
     expect(bad({ lates: [late("2026-11-09", 0)] })).toThrow(ValidationError); // 0 Minuten
     expect(bad({ lates: [late("2026-11-20", 5)] })).toThrow(ValidationError); // andere Woche
     expect(bad({ lates: [late("2026-11-14", 5)] })).toThrow(ValidationError); // Samstag
-    expect(bad({ lates: [late("2026-11-09", 5, 0)] })).toThrow(ValidationError); // Stunde 0
     expect(bad({ missedHours: -1 })).toThrow(ValidationError);
     expect(bad({ missedDays: 1.5 })).toThrow(ValidationError);
     expect(bad({ missedDays: 6 })).toThrow(ValidationError); // mehr als 5 Schultage

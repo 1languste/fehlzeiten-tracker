@@ -256,11 +256,10 @@ function viewWeek(): Html {
           </div>
           <div class="lates">
             <span class="label">Verspätungen</span>
-            ${d.lates.map((l, i) => html`<span class="chip late">${formatDate(l.date).slice(0, 6)} · ${l.hour}. Std · ${l.minutes} Min
+            ${d.lates.map((l, i) => html`<span class="chip late">${formatDate(l.date).slice(0, 6)} · ${l.minutes} Min
               <button class="x" data-action="delLate" data-sid="${id}" data-i="${i}" aria-label="Verspätung entfernen">${icon("x")}</button></span>`)}
             <span class="late-add">
               <select data-late-day="${id}" aria-label="Tag">${days.map((dd, i) => html`<option value="${i}">${["Mo", "Di", "Mi", "Do", "Fr"][i]} ${formatDate(dd).slice(0, 6)}</option>`)}</select>
-              <select data-late-hour="${id}" aria-label="Unterrichtsstunde">${Array.from({ length: 10 }, (_, i) => html`<option value="${i + 1}">${i + 1}. Std</option>`)}</select>
               <input data-late-min="${id}" inputmode="numeric" pattern="[0-9]*" placeholder="Min" aria-label="Minuten zu spät">
               <button class="ghost" data-action="addLate" data-sid="${id}" aria-label="Verspätung hinzufügen">${icon("plus")}<span class="btn-text">Hinzufügen</span></button>
             </span>
@@ -342,8 +341,8 @@ function viewDetail(): Html {
         : html`<p class="muted">Keine Einträge.</p>`}
     </section>
     <section class="card"><h3>Verspätungen</h3>
-      ${d.lateExplanation.length ? html`<div class="table-wrap"><table><thead><tr><th>Datum</th><th class="num">Std</th><th class="num">Min</th><th>Wirkung</th></tr></thead>
-        <tbody>${d.lateExplanation.map((l) => html`<tr class="${l.hours ? "counts" : ""}"><td>${formatDate(l.date)}</td><td class="num">${l.hour}</td><td class="num">${l.minutes}</td><td>${describeLate(l, d.settings.longLateMinutes)}</td></tr>`)}</tbody></table></div>`
+      ${d.lateExplanation.length ? html`<div class="table-wrap"><table><thead><tr><th>Datum</th><th class="num">Min</th><th>Wirkung</th></tr></thead>
+        <tbody>${d.lateExplanation.map((l) => html`<tr class="${l.hours ? "counts" : ""}"><td>${formatDate(l.date)}</td><td class="num">${l.minutes}</td><td>${describeLate(l, d.settings.longLateMinutes)}</td></tr>`)}</tbody></table></div>`
         : html`<p class="muted">Keine Verspätungen.</p>`}
     </section>`;
 }
@@ -530,7 +529,7 @@ async function onClick(el: HTMLElement) {
       const q = (attr: string) => root.querySelector<HTMLInputElement | HTMLSelectElement>(`[data-late-${attr}="${sid}"]`)!;
       const minutes = parseCount(q("min").value);
       if (!minutes || Number.isNaN(minutes)) throw new Error("Bitte die Minuten zu spät eintragen (ganze Zahl, 1 bis 45).");
-      S.draft[sid]!.lates.push({ date: schoolDays(S.week)[Number(q("day").value)]!, hour: Number(q("hour").value), minutes });
+      S.draft[sid]!.lates.push({ date: schoolDays(S.week)[Number(q("day").value)]!, minutes });
       break;
     }
     case "delLate": S.draft[el.dataset.sid!]!.lates.splice(Number(el.dataset.i), 1); break;

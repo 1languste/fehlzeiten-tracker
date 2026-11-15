@@ -17,7 +17,7 @@ export interface SchoolClass { id: string; name: string }
 export interface Student { id: string; name: string; classId: string; archived: boolean }
 export interface HalfYear { id: string; name: string; start: IsoDate; end: IsoDate }
 
-export interface Late { date: IsoDate; hour: number; minutes: number }
+export interface Late { date: IsoDate; minutes: number }
 
 /** Eintrag einer Person für eine Woche (so wird er eingegeben). */
 export interface WeekEntry {

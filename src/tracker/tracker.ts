@@ -64,7 +64,7 @@ const isEmpty = (e: WeekEntry) =>
 
 const isCount = (n: number, min: number, max = Infinity) => Number.isInteger(n) && n >= min && n <= max;
 
-const sortedLates = (l: Late[]) => [...l].sort((a, b) => a.date.localeCompare(b.date) || a.hour - b.hour || a.minutes - b.minutes);
+const sortedLates = (l: Late[]) => [...l].sort((a, b) => a.date.localeCompare(b.date) || a.minutes - b.minutes);
 
 /** Beschreibt, was sich an einem Wocheneintrag geändert hat (leer = nichts). */
 function describeChange(old: WeekEntry, next: WeekEntry): string {
@@ -125,7 +125,6 @@ export function createTracker(opts: { data?: Data; now?: () => string } = {}): T
     if (!isCount(e.missedDays, 0, 5)) throw new ValidationError("Fehltage müssen eine ganze Zahl von 0 bis 5 sein.");
     for (const l of e.lates) {
       if (!days.includes(l.date)) throw new ValidationError(`Verspätung am ${l.date} liegt nicht in der Schulwoche ab ${week}.`);
-      if (!isCount(l.hour, 1, 12)) throw new ValidationError("Die Unterrichtsstunde muss zwischen 1 und 12 liegen.");
       if (!isCount(l.minutes, 1, 45)) throw new ValidationError("Minuten zu spät: ganze Zahl von 1 bis 45.");
     }
   }

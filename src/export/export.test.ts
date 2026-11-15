@@ -5,7 +5,7 @@ import { detailCsv, detailHtml, overviewCsv, overviewHtml } from "./export";
 
 const NOW = "2026-11-15T10:00:00";
 const entry = (p: Partial<WeekEntry>): WeekEntry => ({ lates: [], missedHours: 0, missedDays: 0, note: "", ...p });
-const late = (date: string, minutes: number, hour = 1) => ({ date, hour, minutes });
+const late = (date: string, minutes: number) => ({ date, minutes });
 
 function fixture(name = "Anna", note = "Arzttermin") {
   const t = createTracker({ now: () => NOW });
@@ -18,7 +18,7 @@ function fixture(name = "Anna", note = "Arzttermin") {
     entries: {
       [anna]: entry({
         missedHours: 1, note,
-        lates: [late("2026-11-09", 5), late("2026-11-10", 10), late("2026-11-11", 30, 2), late("2026-11-12", 10), late("2026-11-13", 10)],
+        lates: [late("2026-11-09", 5), late("2026-11-10", 10), late("2026-11-11", 30), late("2026-11-12", 10), late("2026-11-13", 10)],
       }),
       [ben]: entry({ missedDays: 5 }),
     },
@@ -54,10 +54,10 @@ describe("CSV", () => {
     const lines = detailCsv(t.detail(anna)).replace(/^﻿/, "").split(CRLF);
     expect(lines).toContain("Woche (Montag);KW;Fehltage;Fehlstunden;Bemerkung");
     expect(lines).toContain("2026-11-09;46;0;1;Arzttermin");
-    expect(lines).toContain("Datum;Stunde;Minuten;Wirkung");
-    expect(lines).toContain("2026-11-09;1;5;1. kurze Verspätung: folgenlos");
-    expect(lines).toContain("2026-11-11;2;30;lange Verspätung (ab 20 Min): 1 Fehlstunde");
-    expect(lines).toContain("2026-11-12;1;10;3. kurze Verspätung: 1 Fehlstunde");
+    expect(lines).toContain("Datum;Minuten;Wirkung");
+    expect(lines).toContain("2026-11-09;5;1. kurze Verspätung: folgenlos");
+    expect(lines).toContain("2026-11-11;30;lange Verspätung (ab 20 Min): 1 Fehlstunde");
+    expect(lines).toContain("2026-11-12;10;3. kurze Verspätung: 1 Fehlstunde");
     expect(lines).toContain("Fehlstunden gesamt;4");
     expect(lines).toContain("Fehltage gesamt;0");
   });

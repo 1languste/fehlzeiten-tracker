@@ -50,8 +50,8 @@ export function detailCsv(d: Detail): string {
     line("Woche (Montag)", "KW", "Fehltage", "Fehlstunden", "Bemerkung"),
     ...d.weeks.map((w) => line(w.week, isoWeekNumber(w.week), w.missedDays, w.missedHours, w.note)),
     "",
-    line("Datum", "Stunde", "Minuten", "Wirkung"),
-    ...d.lateExplanation.map((l) => line(l.date, l.hour, l.minutes, describeLate(l, s.longLateMinutes))),
+    line("Datum", "Minuten", "Wirkung"),
+    ...d.lateExplanation.map((l) => line(l.date, l.minutes, describeLate(l, s.longLateMinutes))),
     "",
     line("Erfasste Fehlstunden", d.recordedHours),
     line("Fehlstunden aus langen Verspätungen", r.hoursFromLongLates),
@@ -102,14 +102,14 @@ export function detailHtml(d: Detail): string {
     )
     .join("");
   const lates = d.lateExplanation
-    .map((l) => `<tr><td>${esc(l.date)}</td><td class="num">${l.hour}</td><td class="num">${l.minutes}</td><td>${esc(describeLate(l, s.longLateMinutes))}</td></tr>`)
+    .map((l) => `<tr><td>${esc(l.date)}</td><td class="num">${l.minutes}</td><td>${esc(describeLate(l, s.longLateMinutes))}</td></tr>`)
     .join("");
 
   const body =
     `<h1>${esc(d.student.name)} · Klasse ${esc(d.className)}</h1>` +
     `<p class="muted">${esc(d.halfYear.name)} (${esc(d.halfYear.start)} bis ${esc(d.halfYear.end)}) · Status: ${esc(statusLabel(d.status, d.filedOn))}</p>` +
     `<h2>Wocheneinträge</h2><table><thead><tr><th>Woche (Montag)</th><th>KW</th><th>Fehltage</th><th>Fehlstunden</th><th>Bemerkung</th></tr></thead><tbody>${weeks}</tbody></table>` +
-    `<h2>Verspätungen</h2><table><thead><tr><th>Datum</th><th>Stunde</th><th>Minuten</th><th>Wirkung</th></tr></thead><tbody>${lates}</tbody></table>` +
+    `<h2>Verspätungen</h2><table><thead><tr><th>Datum</th><th>Minuten</th><th>Wirkung</th></tr></thead><tbody>${lates}</tbody></table>` +
     `<h2>Berechnung</h2><ul class="calc">` +
     `<li>Erfasste Fehlstunden: ${d.recordedHours}</li>` +
     `<li>Fehlstunden aus langen Verspätungen: ${r.hoursFromLongLates}</li>` +
